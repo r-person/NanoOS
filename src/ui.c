@@ -1,4 +1,4 @@
-// NanoOS Alpha version 1.0.0 default UI
+// The default UI of NanoOS Alpha version 1.1.0
 // Written by RPerson
 
 #include <stdint.h>
@@ -9,6 +9,11 @@ typedef struct {
     uint32_t ebx;
     uint32_t ecx;
 } syscall_result_t;
+
+typedef struct regs {
+    uint32_t edi, esi, ebp, esp;
+    uint32_t ebx, edx, ecx, eax;
+} regs_t;
 
 #define syscall(n, a, b, c, d)                    \
 ({                                                \
@@ -35,11 +40,37 @@ static char input_buffer[79];
 static const char* reboot_command = "reboot";
 static const char* echo_command = "echo";
 static const char* version_command = "version";
-const char* boot_str = "NanoOS Alpha v1.0.0";
+static const char* filenum_command = "filenum";
+static const char* dir_command = "dir";
+const char* boot_str = "NanoOS Alpha v1.1.0";
 const char* reboot_str = "Rebooting...";
 static volatile uint16_t* vga = (volatile uint16_t*)0xB8000;
 static uint8_t current_row;
 static uint8_t current_input_char_col;
+
+static void uint32_to_str(uint32_t value, char *buffer)
+{
+    char temp[10];
+    int i = 0;
+
+    if (value == 0) {
+        buffer[0] = '0';
+        buffer[1] = '\0';
+        return;
+    }
+
+    while (value > 0) {
+        temp[i++] = '0' + (value % 10);
+        value /= 10;
+    }
+
+    int j = 0;
+    while (i > 0) {
+        buffer[j++] = temp[--i];
+    }
+
+    buffer[j] = '\0';
+}
 
 static bool check_command(const char* str1, const char* str2){
 	int i = 0;
@@ -85,10 +116,10 @@ static void println(const char* line){
 	print_line(line, current_row - 1, 0);
 }
 
-void ui_systemcall(uint32_t syscall_num, uint32_t arg1, uint32_t arg2, uint32_t arg3){
+void ui_systemcall(uint32_t syscall_num, uint32_t arg1, uint32_t arg2, uint32_t arg3, regs_t *r){
 	char c;
 	switch (syscall_num){
-		case 0x00:
+		case 0x00:{
 			clear_screen();
 			current_row = 0;
 			current_input_char_col = 1;
@@ -98,9 +129,11 @@ void ui_systemcall(uint32_t syscall_num, uint32_t arg1, uint32_t arg2, uint32_t 
 				input_buffer[i] = '\0';
 			}
 			break;
-		case 0x01:    // frame
+		}
+		case 0x01:{    // frame
 			break;
-		case 0x02:
+		}
+		case 0x02:{
 			c = (char)arg1;
 			if (c == '\n'){
 				current_input_char_col = 1;
@@ -114,6 +147,14 @@ void ui_systemcall(uint32_t syscall_num, uint32_t arg1, uint32_t arg2, uint32_t 
 					println((const char*)input_buffer + 5);
 				} else if (check_command(input_buffer, version_command)){
 					println(boot_str);
+				} else if (check_command(input_buffer, filenum_command)){
+					char output_str[16];
+					syscall_result_t result = syscall(0x83, 0x03, 0x00, 0x00, 0x00);
+					uint32_t number_of_files = result.eax;
+					uint32_to_str(number_of_files, output_str);
+					println((const char*)output_str);
+				} else if (check_command(input_buffer, dir_command)){
+					syscall_result_t result = syscall(0x83, 0x04, 0x00, 0x00, 0x00);
 				}
 			} else {
 				input_buffer[current_input_char_col - 1] = c;
@@ -122,10 +163,13 @@ void ui_systemcall(uint32_t syscall_num, uint32_t arg1, uint32_t arg2, uint32_t 
 				current_input_char_col++;
 			}
 			break;
-		case 0x03:
+		}
+		case 0x03:{
 			println((const char*)arg1);
 			break;
-		default:
+		}
+		default:{
 			break;
+		}
 	}
 }

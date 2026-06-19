@@ -1,4 +1,4 @@
-; NanoKernel 0.0.0 interrupts entery
+; NanoKernel v0.1.0 interrupts entery
 ; Written by RPerson
 
 BITS 32

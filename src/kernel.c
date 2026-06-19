@@ -1,4 +1,4 @@
-// NanoKernel version 0.0.0
+// NanoKernel v0.1.0
 // Written by RPerson
 
 #include <stdint.h>
@@ -58,11 +58,9 @@ extern void isr47();
 extern void __systemcall();
 extern void __intersystemcall();
 extern void __uisystemcall();
+extern void __filesystemsystemcall();
 extern void gdt_flush();
-
-extern uint32_t syscall_output1;
-extern uint32_t syscall_output2;
-extern uint32_t syscall_output3;
+extern void enable_paging();
 
 typedef struct regs {
     uint32_t edi, esi, ebp, esp;
@@ -156,6 +154,9 @@ void *isr[48] = {
 volatile uint64_t ticks_count = 0;
 uint8_t sc;
 
+uint32_t page_directory[1024] __attribute__((aligned(4096)));
+uint32_t first_page_table[1024] __attribute__((aligned(4096)));
+
 typedef struct {
     uint32_t eax;
     uint32_t ebx;
@@ -193,6 +194,18 @@ inline uint8_t inb(uint16_t port){
 	return ret;
 }
 
+static inline uint16_t inw(uint16_t port) {
+    uint16_t result;
+
+    asm volatile (
+        "inw %1, %0"
+        : "=a"(result)
+        : "Nd"(port)
+    );
+
+    return result;
+}
+
 inline void cli(){
 	__asm__ volatile ("cli");
 }
@@ -201,8 +214,28 @@ inline void sti(){
 	__asm__ volatile ("sti");
 }
 
-void println(const char* str){
+inline void println(const char* str){
 	syscall(0x82, 0x03, (uint32_t)str, 0x00, 0x00);
+}
+
+// Reads sectors from legacy ATA (PATA) 
+void ata_read_sectors(uint32_t lba, uint8_t sectors_amount, uint8_t *buffer){
+    while (inb(0x1F7) & 0x80);
+
+    outb(0x1F6, 0xE0 | ((lba >> 24) & 0x0F));
+    outb(0x1F2, sectors_amount);
+    outb(0x1F3, (uint8_t)lba);
+    outb(0x1F4, (uint8_t)(lba >> 8));
+    outb(0x1F5, (uint8_t)(lba >> 16));
+    outb(0x1F7, 0x20);
+
+    while (inb(0x1F7) & 0x80);
+
+    for (int i = 0; i < 256 * sectors_amount; i++) {
+        uint16_t data = inw(0x1F0);
+        buffer[i * 2] = data & 0xFF;
+        buffer[i * 2 + 1] = data >> 8;
+    }
 }
 
 void gdt_set_gate(int num, uint32_t base, uint32_t limit,
@@ -391,7 +424,7 @@ void systemcall(uint32_t call_number, uint32_t arg1, uint32_t arg2, uint32_t arg
 	switch (call_number){
 		case 0x00:
 			r->eax = 0;
-			r->ebx = 0;
+			r->ebx = 1;
 			r->ecx = 0;
 			break;
 		case 0x01:
@@ -407,12 +440,15 @@ void intersystemcall(uint32_t call_number, uint32_t arg1, uint32_t arg2, uint32_
 		case 0x00:
 			isr8();
 			break;
+		case 0x01:
+			ata_read_sectors(arg1, (uint8_t)arg2, (uint8_t*)arg3);
 		default:
 			break;
 	}
 }
 
 void kernel_main(void){
+	// Sets up interrupts
 	gdt_init();
 	gdt_flush();
 	pic_remap(0x20, 0x28);
@@ -422,7 +458,18 @@ void kernel_main(void){
 	idt_set_gate(0x80, (uint32_t)__systemcall, 0xEE);
 	idt_set_gate(0x81, (uint32_t)__intersystemcall, 0x8E);
 	idt_set_gate(0x82, (uint32_t)__uisystemcall, 0x8E);
+	idt_set_gate(0x83, (uint32_t)__filesystemsystemcall, 0x8E);
 	idt_init();
+	// Sets up paging
+	for (int i = 0; i < 1024; i++){
+		page_directory[i] = 0;
+	}
+	for (int i = 0; i < 1024; i++) {
+		first_page_table[i] = (i * 0x1000) | 3;
+	}
+	page_directory[0] = ((uint32_t)first_page_table) | 3;
+	// Sets up other things
 	syscall(0x82, 0x00, 0x00, 0x00, 0x00);
+	syscall(0x83, 0x00, 0x00, 0x00, 0x00);
 	asm volatile("sti");
 }
