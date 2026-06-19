@@ -55,6 +55,8 @@ IRQ1 the kernel gets the keyboard input. In case of IRQ0 nothing meaningful happ
 
 - Handling basic FAT32 actions. 
 
+- Paging with identity mapping.
+
 # FAQ
 
 ## How to install apps on it?
@@ -87,7 +89,8 @@ __filesystemsystemcall is the entery of int 0x83 and you need to handle all the 
 
 # Architecture overview
 
-The OS is built for 32-bits x86. It boots using GRUB into a simple shell. Correctly the OS does NOT apps, even though support for apps is planned. 
+The OS is built for 32-bits x86. It boots using GRUB into a simple shell. It implements interrupts, FAT32, and paging. Correctly the OS does NOT apps, even though 
+support for apps is planned. 
 
 # Syscalls
 
