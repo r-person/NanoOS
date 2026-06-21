@@ -4,7 +4,7 @@ NanoOS is a 32-bits x86 OS built with the goal of having a small core and the po
 
 # How to run it?
 
-Use make for it. You can compile it yourself or use the prebuilt ISO. You need the next tools to compile it:
+Use make for it. You can compile it yourself or use the prebuilt disk image. You need the next tools to compile it:
 
 - Clang
 
@@ -24,7 +24,7 @@ Use make for it. You can compile it yourself or use the prebuilt ISO. You need t
 
 And to run it you need:
 
-- Any kind of a VM. This project is built assuming QEMU, but the ISO can work on other VMs. 
+- Any kind of a VM. This project is built assuming QEMU, but the disk image can work on other VMs. 
 
 To compile it use:
 
@@ -41,11 +41,11 @@ make run
 
 # Supported features
 
-Correctly (as of Alpha v1.1.0) the OS supports the next features:
+Correctly (as of Alpha v1.1.1) the OS supports the next features:
 
 - Booting using GRUB into Protected Mode.
 
-- A basic text-mode shell with the commands 'version', 'reboot', 'echo', 'filenum' and 'dir'.
+- A basic text-mode shell with basic commands.
 
 - Informing the user about CPU exception (except double faults) and halting without crashing. In case of a double fault the kernel resets the computer. In case of 
 IRQ1 the kernel gets the keyboard input. In case of IRQ0 nothing meaningful happens, and in case of IRQ2 - IRQ15 nothing happens.
@@ -57,11 +57,41 @@ IRQ1 the kernel gets the keyboard input. In case of IRQ0 nothing meaningful happ
 
 - Paging with identity mapping.
 
+<<<<<<< HEAD
+=======
+# New features
+
+Added support for FAT32 subdirectories. 
+
+# Shell commands
+
+## version
+
+Prints the current NanoOS version. 
+
+## reboot
+
+Reboots the computer.
+
+## echo
+
+Prints into the screen the text written after the command.
+
+## filenum
+
+Prints the count of files and directories in the ubdirectory specified after the command (or the root directory if not specified any subdirectory). This includes 
+"." and "..".
+
+## dir
+
+Prints all the directories and files in the subdirectory specified after the command (or the root directory if not specified any subdirectory).
+
+>>>>>>> a49c081 (NanoOS Alpha v1.1.1)
 # FAQ
 
 ## How to install apps on it?
 
-NanoOS Alpha v1.1.0 doesn't support running apps. 
+NanoOS Alpha v1.1.1 doesn't support running apps. 
 
 ## Do you plan to add support for apps?
 

@@ -1,4 +1,4 @@
-// The default UI of NanoOS Alpha version 1.1.0
+// The default UI of NanoOS Alpha version 1.1.1
 // Written by RPerson
 
 #include <stdint.h>
@@ -42,7 +42,7 @@ static const char* echo_command = "echo";
 static const char* version_command = "version";
 static const char* filenum_command = "filenum";
 static const char* dir_command = "dir";
-const char* boot_str = "NanoOS Alpha v1.1.0";
+const char* boot_str = "NanoOS Alpha v1.1.1";
 const char* reboot_str = "Rebooting...";
 static volatile uint16_t* vga = (volatile uint16_t*)0xB8000;
 static uint8_t current_row;
@@ -149,12 +149,21 @@ void ui_systemcall(uint32_t syscall_num, uint32_t arg1, uint32_t arg2, uint32_t 
 					println(boot_str);
 				} else if (check_command(input_buffer, filenum_command)){
 					char output_str[16];
-					syscall_result_t result = syscall(0x83, 0x03, 0x00, 0x00, 0x00);
+					syscall_result_t result;
+					if (*(input_buffer + 7) != '\0'){
+						result = syscall(0x83, 0x03, (const char*)(input_buffer + 8), 0x00, 0x00);
+					} else {
+						result = syscall(0x83, 0x03, (const char*)(input_buffer + 8), 0x00, 0x00);
+					}
 					uint32_t number_of_files = result.eax;
 					uint32_to_str(number_of_files, output_str);
 					println((const char*)output_str);
 				} else if (check_command(input_buffer, dir_command)){
-					syscall_result_t result = syscall(0x83, 0x04, 0x00, 0x00, 0x00);
+					if (*(input_buffer + 3) != '\0'){
+						syscall(0x83, 0x04, (const char*)(input_buffer + 4), 0x00, 0x00);
+					} else{
+						syscall(0x83, 0x04, (const char*)"\0", 0x00, 0x00);
+					}
 				}
 			} else {
 				input_buffer[current_input_char_col - 1] = c;

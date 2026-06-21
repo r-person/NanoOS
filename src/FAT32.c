@@ -46,7 +46,10 @@ typedef struct regs {
 static uint8_t boot_sector[512];
 static uint32_t FAT[128];
 static const char* non_vaild_FAT32_err = "Invaild or unsupported FAT32 detected.";
-static const char* bad_FAT32_sector_err = "Invaild FAT32 sector detected.";
+static const char* non_vaild_input_err = "Invaild input detected (FAT32 handler).";
+static const char* bad_FAT32_cluster_err = "Invaild FAT32 cluster detected.";
+static char current_directory[256] = "/";
+static uint8_t current_directory_length = 1;
 
 static void uint32_to_str(uint32_t value, char *buffer)
 {
@@ -83,6 +86,52 @@ static inline uint8_t are_strings_equal(const char* str1, const char* str2, uint
 	return 0x01;
 }
 
+static uint16_t strlen(const char* str){
+	int c = 0;
+	while (*(str + c) != '\0'){
+		c++;
+	}
+	return c;
+}
+
+static void to_8_3_format(const char *input, uint8_t out[11])
+{
+    for (int i = 0; i < 11; i++)
+        out[i] = ' ';
+    
+    int i = 0;
+
+    while (*input && *input != '.' && i < 8)
+    {
+        char c = *input++;
+        if (c >= 'a' && c <= 'z')
+            c -= 32;
+        out[i++] = c;
+    }
+
+    if (*input == '.')
+        input++;
+    i = 8;
+
+    while (*input && i < 3)
+    {
+        char c = *input++;
+        if (c >= 'a' && c <= 'z')
+            c -= 32;
+        out[i++] = c;
+    }
+}
+
+static inline uint8_t fat_name_match(uint8_t *entry_name, uint8_t name[11])
+{
+    for (int i = 0; i < 11; i++)
+    {
+        if (entry_name[i] != name[i])
+            return 0;
+    }
+    return 1;
+}
+
 static inline uint32_t next_cluster(uint32_t cluster){
 	uint32_t fat_offset = cluster * 4;
 	syscall(0x81, 0x01, reserved_sectors + (fat_offset / bytes_per_sector) + hidden_sectors, 0x01, FAT);
@@ -93,10 +142,9 @@ static void read_file(uint32_t first_cluster, uint8_t *buffer){
 	uint32_t current_cluster = first_cluster; 
 	uint8_t *current_pointer = buffer;
 	while (current_cluster < 0x0FFFFFF8){
-		if (current_cluster == 0 ||
-			current_cluster == 0x0FFFFFF7){
+		if (current_cluster == 0 || current_cluster == 0x0FFFFFF7){
 				__asm__ volatile ("cli");
-				syscall(0x82, 0x03, (uint32_t)bad_FAT32_sector_err, 0x00, 0x00);
+				syscall(0x82, 0x03, (uint32_t)bad_FAT32_cluster_err, 0x00, 0x00);
 				__asm__ volatile ("hlt");
 		}
 		syscall(0x81, 0x01, cluster_to_sector(current_cluster), sectors_per_cluster, current_pointer);
@@ -105,87 +153,153 @@ static void read_file(uint32_t first_cluster, uint8_t *buffer){
 	}
 }
 
-static uint32_t find_first_cluster(const char *filename)
+static uint32_t find_first_cluster(const char *path)
 {
     uint32_t current_cluster = root_directory_cluster;
-	uint8_t directory[sectors_per_cluster * bytes_per_sector];
 
-	while (current_cluster < 0x0FFFFFF8)
-	{
-		if (current_cluster == 0 ||
-			current_cluster == 0x0FFFFFF7){
+    char name[256];
+    const char *p = path;
+
+    while (*p)
+    {
+        uint32_t i = 0;
+        while (*p && *p != '\\')
+        {
+			if (i >= 11){
 				__asm__ volatile ("cli");
-				syscall(0x82, 0x03, (uint32_t)bad_FAT32_sector_err, 0x00, 0x00);
+				syscall(0x82, 0x03, (uint32_t)non_vaild_input_err, 0x00, 0x00);
 				__asm__ volatile ("hlt");
-		}
-		syscall(0x81, 0x01, cluster_to_sector(current_cluster), sectors_per_cluster, directory);
-		for (uint32_t i = 0; i < sectors_per_cluster * bytes_per_sector; i += 32)
-		{
-			uint8_t *entry = &directory[i];
-			if (*entry == 0x00)
-				return 0;
-			if (*entry == 0xE5)
-				continue;
-			if (*(entry + 11) == 0x0F){
 			}
-			if (*(entry + 11) & 0x08)
-				continue;
-			if (are_strings_equal(filename, (const char *)entry, 11))
-			{
+            name[i++] = *p++;
+        }
+        name[i] = '\0';
+
+        if (*p == '\\')
+            p++;
+
+        uint8_t directory[sectors_per_cluster * bytes_per_sector];
+        uint8_t found = 0;
+
+        while (current_cluster < 0x0FFFFFF8)
+        {
+            if (current_cluster == 0 || current_cluster == 0x0FFFFFF7)
+            {
+                __asm__ volatile ("cli");
+                syscall(0x82, 0x03, (uint32_t)bad_FAT32_cluster_err, 0x00, 0x00);
+                __asm__ volatile ("hlt");
+            }
+
+            syscall(0x81, 0x01, cluster_to_sector(current_cluster), sectors_per_cluster, directory);
+
+            for (uint32_t j = 0; j < sectors_per_cluster * bytes_per_sector; j += 32)
+            {
+                uint8_t *entry = &directory[j];
+
+                if (*entry == 0x00)
+                    break;
+
+                if (*entry == 0xE5)
+                    continue;
+
+                if (*(entry + 11) == 0x0F)
+                    continue;
+
+                if (*(entry + 11) & 0x08)
+                    continue;
+
+				uint8_t fat_name[11];
+				to_8_3_format(name, fat_name);
+				
+                if (fat_name_match(entry, fat_name))
+                {
+                    uint16_t high = *(uint16_t *)(entry + 20);
+                    uint16_t low  = *(uint16_t *)(entry + 26);
+
+                    current_cluster = ((uint32_t)high << 16) | low;
+                    found = 1;
+                    break;
+                }
+            }
+
+            if (found)
+                break;
+
+            current_cluster = next_cluster(current_cluster);
+        }
+
+        if (!found)
+            return 0;
+
+        if (*p == '\0')
+            return current_cluster;
+    }
+
+    return current_cluster;
+}
+
+static uint32_t count_files_in_dir(uint32_t current_cluster, uint8_t recursive)
+{
+    uint8_t directory[sectors_per_cluster * bytes_per_sector];
+    uint32_t count = 0;
+
+    while (current_cluster < 0x0FFFFFF8)
+    {
+        if (current_cluster == 0 || current_cluster == 0x0FFFFFF7)
+        {
+            __asm__ volatile ("cli");
+            syscall(0x82, 0x03, (uint32_t)bad_FAT32_cluster_err, 0x00, 0x00);
+            __asm__ volatile ("hlt");
+        }
+
+        syscall(0x81, 0x01, cluster_to_sector(current_cluster), sectors_per_cluster, directory);
+
+        for (uint32_t i = 0; i < sectors_per_cluster * bytes_per_sector; i += 32)
+        {
+            uint8_t *entry = &directory[i];
+            uint8_t attr = entry[11];
+
+            if (*entry == 0x00)
+                return count;
+
+            if (*entry == 0xE5)
+                continue;
+
+            if (attr == 0x0F)
+                continue;
+
+            if (attr & 0x08)
+                continue;
+
+            if (attr & 0x10 && recursive)
+            {
 				uint16_t high = *(uint16_t *)(entry + 20);
 				uint16_t low  = *(uint16_t *)(entry + 26);
-	
-				return ((uint32_t)high << 16) | low;
-			}
-		}
-		current_cluster = next_cluster(current_cluster);
-	}
-    return 0;
+
+				uint32_t subdir_cluster = ((uint32_t)high << 16) | low;
+
+				if (subdir_cluster != 0)
+					count += count_files_in_dir(subdir_cluster, 1);
+            }
+            else
+            {
+                count++;
+            }
+        }
+
+        current_cluster = next_cluster(current_cluster);
+    }
+
+    return count;
 }
 
-static uint32_t number_of_files(){
-	uint32_t current_cluster = root_directory_cluster;
-	uint8_t directory[sectors_per_cluster * bytes_per_sector];
-	int count = 0;
-
-	while (current_cluster < 0x0FFFFFF7){
-		if (current_cluster == 0 ||
-			current_cluster == 0x0FFFFFF7){
-				__asm__ volatile ("cli");
-				syscall(0x82, 0x03, (uint32_t)bad_FAT32_sector_err, 0x00, 0x00);
-				__asm__ volatile ("hlt");
-		}
-		syscall(0x81, 0x01, cluster_to_sector(current_cluster), sectors_per_cluster, directory);
-		
-		for (uint32_t i = 0; i < sectors_per_cluster * bytes_per_sector; i += 32){
-			uint8_t *entry = &directory[i];
-			if (*entry == 0x00)
-				return count;
-			if (*entry == 0xE5)
-				continue;
-			if (*(entry + 11) == 0x0F){
-			}
-			if (*(entry + 11) & 0x08)
-				continue;
-			if (entry[11] & 0x20) {
-				count++;
-			}
-		}
-		current_cluster = next_cluster(current_cluster);
-	}
-	
-	return count;
-}
-
-static void print_all_files(){
-	uint32_t current_cluster = root_directory_cluster;
+static void print_all_files(uint32_t starting_cluster){
+	uint32_t current_cluster = starting_cluster;
 	uint8_t directory[sectors_per_cluster * bytes_per_sector];
 
-	while (current_cluster < 0x0FFFFFF7){
-		if (current_cluster == 0 ||
-			current_cluster == 0x0FFFFFF7){
+	while (current_cluster < 0x0FFFFFF8){
+		if (current_cluster == 0 || current_cluster == 0x0FFFFFF7){
 				__asm__ volatile ("cli");
-				syscall(0x82, 0x03, (uint32_t)bad_FAT32_sector_err, 0x00, 0x00);
+				syscall(0x82, 0x03, (uint32_t)bad_FAT32_cluster_err, 0x00, 0x00);
 				__asm__ volatile ("hlt");
 		}
 		syscall(0x81, 0x01, cluster_to_sector(current_cluster), sectors_per_cluster, directory);
@@ -203,7 +317,7 @@ static void print_all_files(){
 			else{
 				if (entry[11] & 0x10){
 					char str[18];
-					int k = 0;
+					uint8_t k = 0;
 
 					str[k++] = 'D';
 					str[k++] = 'I';
@@ -276,6 +390,10 @@ void fat32_systemcall(uint32_t call_number, uint32_t arg1, uint32_t arg2, uint32
 		}
 		case 0x01:{
 			uint32_t first_cluster = find_first_cluster((const char*)arg1);
+			if (first_cluster == 0){
+				r->eax = 0;
+				break;
+			}
 			r->eax = clusters_in_file(first_cluster) * sectors_per_cluster * bytes_per_sector;
 			break;
 		}
@@ -286,11 +404,17 @@ void fat32_systemcall(uint32_t call_number, uint32_t arg1, uint32_t arg2, uint32
 			break;
 		}
 		case 0x03:{
-			r->eax = number_of_files();
+			const char* path = (const char*)arg1;
+			if (*path == 0){
+				r->eax = count_files_in_dir(root_directory_cluster, arg2);
+			} else {
+				r->eax = count_files_in_dir(find_first_cluster(path), arg2);
+			}
 			break;
 		}
 		case 0x04:{
-			print_all_files();
+			uint32_t starting_cluster = find_first_cluster((const char*)arg1);
+			print_all_files(starting_cluster);
 			break;
 		}
 		default:{

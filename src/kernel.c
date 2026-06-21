@@ -1,4 +1,4 @@
-// NanoKernel v0.1.0
+// NanoKernel v0.1.1
 // Written by RPerson
 
 #include <stdint.h>
@@ -139,7 +139,13 @@ const char scancode_to_ascii[128] = {
     [0x2C] = 'z',
 	
 	[0x1C] = '\n',
-	[0x39] = ' '
+	[0x39] = ' ',
+	[0x35] = '\\',
+	[0x4E] = '+',
+	[0x4A] = '-',
+	[0x0C] = '_',
+	[0x0C] = '=',
+	[0x34] = '.'
 };
 
 void *isr[48] = {
@@ -425,7 +431,7 @@ void systemcall(uint32_t call_number, uint32_t arg1, uint32_t arg2, uint32_t arg
 		case 0x00:
 			r->eax = 0;
 			r->ebx = 1;
-			r->ecx = 0;
+			r->ecx = 1;
 			break;
 		case 0x01:
 			cli();

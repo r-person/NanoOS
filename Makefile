@@ -18,6 +18,12 @@ KERNEL=build/kernel.elf
 DISK=nanoos.img
 MOUNT=mnt
 
+APP_SRC=$(wildcard apps/*.c)
+APP_ELF=$(patsubst apps/%.c,build/apps/%.elf,$(APP_SRC))
+
+APP_CFLAGS=-target i686-elf -ffreestanding -O2 -Wall -Wextra
+APP_LDFLAGS=-T app.ld
+
 all: $(DISK)
 
 build/%.o: src/%.c
@@ -32,7 +38,14 @@ $(KERNEL): $(OBJ)
 	mkdir -p build
 	$(LD) $(LDFLAGS) $(OBJ) -o $(KERNEL)
 
-$(DISK): $(KERNEL)
+build/apps/%.elf: apps/%.c
+	mkdir -p build/apps
+	$(CC) $(APP_CFLAGS) -c $< -o build/apps/$*.o
+	$(LD) $(APP_LDFLAGS) build/apps/$*.o -o $@
+
+apps: $(APP_ELF)
+
+$(DISK): $(KERNEL) apps
 	rm -f $(DISK)
 
 	dd if=/dev/zero of=$(DISK) bs=1M count=64
@@ -45,8 +58,10 @@ $(DISK): $(KERNEL)
 	mkdir -p $(MOUNT); \
 	sudo mount $${LOOP}p1 $(MOUNT); \
 	sudo mkdir -p $(MOUNT)/boot/grub; \
+	sudo mkdir -p $(MOUNT)/apps; \
 	sudo cp $(KERNEL) $(MOUNT)/boot/kernel.elf; \
 	sudo cp grub.cfg $(MOUNT)/boot/grub/grub.cfg; \
+	sudo cp build/apps/*.elf $(MOUNT)/apps/ || true; \
 	sudo grub-install \
 		--target=i386-pc \
 		--boot-directory=$(MOUNT)/boot \
@@ -61,4 +76,4 @@ run: $(DISK)
 clean:
 	rm -rf build $(DISK) $(MOUNT)
 
-.PHONY: all run clean
+.PHONY: all run clean apps

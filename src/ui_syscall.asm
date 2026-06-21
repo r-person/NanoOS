@@ -1,4 +1,4 @@
-; NanoOS Alpha v1.1.0 default UI's assembly code
+; NanoOS Alpha v1.1.1 default UI's assembly code
 ; Written by RPserson
 
 BITS 32
