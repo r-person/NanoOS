@@ -1,27 +1,28 @@
-ENTRY(_start)
+ENTRY(start)
 
 SECTIONS
 {
     . = 1M;
 
-    .text :
+    .boot :
     {
-        *(.multiboot)
-        *(.text)
+        KEEP(*(.multiboot))
+        *(.boot.text)
+        *(.boot.data)
+        *(.boot.bss)
     }
 
-    .rodata :
-    {
-        *(.rodata)
-    }
+    . = ALIGN(4096);
 
-    .data :
-    {
-        *(.data)
-    }
+    kernel_phys = .;
 
-    .bss :
+    . += 0xC0000000;
+
+    .kernel : AT(kernel_phys)
     {
-        *(.bss)
+        *(.text*)
+        *(.rodata*)
+        *(.data*)
+        *(.bss*)
     }
 }
