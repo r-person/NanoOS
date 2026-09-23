@@ -283,7 +283,6 @@ void ui_systemcall(uint32_t syscall_num, uint32_t arg1, uint32_t arg2, uint32_t 
 			} else {
 				r->eax = 0x00;
 			}
-			print(r->eax);
 			break;
 		}
 		case 0x04:{
